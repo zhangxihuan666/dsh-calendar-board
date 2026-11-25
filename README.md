@@ -25,7 +25,15 @@ DeepSeek Harness 主界面上的项目日历：右下角一张迷你月历，点
 
 ## 安装
 
-### 方式 A：作为 DSH bundle 安装
+### 方式 A：用 `dsh plugin add` 装 Release tarball
+
+若你的 DSH 环境提供 `dsh` CLI（本机 DSH 桌面版没有暴露该命令，未实测）：
+
+```bash
+dsh plugin add https://github.com/zhangxihuan666/dsh-calendar-board/releases/download/v0.1.2/dsh-calendar-board-0.1.2.tgz
+```
+
+### 方式 B：作为 DSH bundle 安装
 
 把仓库克隆到本地：
 
@@ -47,7 +55,7 @@ git clone https://github.com/zhangxihuan666/dsh-calendar-board.git
 
 安装后**重启 DSH**。替换已安装包时，Host JS 和 Client JS 都只在重启后重新加载。
 
-### 方式 B：作为 Skill 使用
+### 方式 C：作为 Skill 使用
 
 根目录的 `SKILL.md` 是给 Agent 看的操作说明。把它所在的目录复制到 DSH 的 skills 目录：
 
