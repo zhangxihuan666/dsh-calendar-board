@@ -280,7 +280,7 @@ export function apply(ctx, config = {}) {
     }
     try {
       if (method === 'load') {
-        writeJson(res, 200, { ok: true, result: { plan: readPlan(file) } })
+        writeJson(res, 200, { ok: true, result: { plan: readPlan(file), capabilities: { projects: true, markers: true } } })
         return
       }
       if (!['upsert', 'remove', 'toggle', 'goal-toggle', 'goal-upsert'].includes(method)) {

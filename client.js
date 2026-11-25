@@ -104,6 +104,16 @@ window.__ModuleLoader__.load({
       return toKey(date)
     }
 
+    function shiftMonth(key, count) {
+      const date = parseKey(key)
+      const day = date.getDate()
+      date.setDate(1)
+      date.setMonth(date.getMonth() + count)
+      const lastDay = new Date(date.getFullYear(), date.getMonth() + 1, 0).getDate()
+      date.setDate(Math.min(day, lastDay))
+      return toKey(date)
+    }
+
     function startOfWeek(key) {
       const date = parseKey(key)
       const offset = (date.getDay() + 6) % 7
@@ -262,6 +272,7 @@ window.__ModuleLoader__.load({
 
     function usePlan() {
       const [plan, setPlan] = useState(null)
+      const [capabilities, setCapabilities] = useState(null)
       const [error, setError] = useState('')
       const [loading, setLoading] = useState(true)
 
@@ -269,6 +280,7 @@ window.__ModuleLoader__.load({
         try {
           const result = await api('load')
           setPlan(result.plan)
+          setCapabilities(result.capabilities ?? null)
           setError('')
         } catch (reason) {
           setError(reason?.message ?? '读取日历失败')
@@ -299,7 +311,7 @@ window.__ModuleLoader__.load({
         return result.plan
       }, [])
 
-      return { plan, error, loading, load, mutate }
+      return { plan, capabilities, error, loading, load, mutate }
     }
 
     // ------------------------------------------------------------ mini view
@@ -308,7 +320,7 @@ window.__ModuleLoader__.load({
       const {
         plan, cursor, collapsed, position, onPrev, onNext, onOpenDay,
         onOpenFull, onToggleCollapsed, onDragStart, onDragMove, onDragEnd,
-        onToggleGoal, onResetPosition,
+        onToggleGoal, onResetPosition, hostOutdated,
       } = props
       const byDate = useMemo(() => groupByDate(plan.tasks), [plan.tasks])
       const markersByDate = useMemo(() => groupMarkers(plan.markers), [plan.markers])
@@ -370,6 +382,9 @@ window.__ModuleLoader__.load({
               h('button', { type: 'button', className: 'calb-icon-btn', title: '收起', onClick: onToggleCollapsed }, '–'),
             ),
           ),
+          hostOutdated
+            ? h('div', { className: 'calb-host-warning' }, 'Host 旧版仍运行：重启 DSH 后再改；现在写入会丢项目/节点标记。')
+            : null,
           h(
             'div',
             { className: 'calb-dow' },
@@ -454,6 +469,7 @@ window.__ModuleLoader__.load({
       const {
         plan, view, cursor, selected, onView, onCursor, onSelect, onClose,
         onOpenTask, onNewTask, onToggleTask, onToggleGoal, onAddGoal,
+        hostOutdated,
       } = props
       const byDate = useMemo(() => groupByDate(plan.tasks), [plan.tasks])
       const markersByDate = useMemo(() => groupMarkers(plan.markers), [plan.markers])
@@ -466,13 +482,15 @@ window.__ModuleLoader__.load({
 
       const step = (direction) => {
         if (view === 'month') {
-          const date = parseKey(cursor)
-          date.setMonth(date.getMonth() + direction)
-          onCursor(toKey(date))
+          const next = shiftMonth(cursor, direction)
+          onCursor(next)
+          onSelect(next)
           return
         }
         if (view === 'week') {
-          onCursor(addDays(cursor, direction * 7))
+          const next = addDays(cursor, direction * 7)
+          onCursor(next)
+          onSelect(next)
           return
         }
         const next = addDays(selected, direction)
@@ -586,6 +604,7 @@ window.__ModuleLoader__.load({
               onOpenTask,
               onToggleGoal,
               onAddGoal,
+              hostOutdated,
             }),
           ),
         ),
@@ -809,7 +828,7 @@ window.__ModuleLoader__.load({
       )
     }
 
-    function Aside({ plan, monthTasks, cursor, selected, selectedTasks, selectedMarkers, onOpenTask, onToggleGoal, onAddGoal }) {
+    function Aside({ plan, monthTasks, cursor, selected, selectedTasks, selectedMarkers, onOpenTask, onToggleGoal, onAddGoal, hostOutdated }) {
       const monthGoals = useMemo(
         () => plan.goals.filter((goal) => goal.date !== null && goal.date.slice(0, 7) === cursor.slice(0, 7)),
         [plan.goals, cursor],
@@ -822,6 +841,9 @@ window.__ModuleLoader__.load({
       return h(
         'aside',
         { className: 'calb-aside' },
+        hostOutdated
+          ? h('div', { className: 'calb-host-warning' }, 'Host 旧版仍运行：重启 DSH 后再改；现在写入会丢项目/节点标记。')
+          : null,
         h(
           'section',
           { className: 'calb-panel' },
@@ -853,6 +875,12 @@ window.__ModuleLoader__.load({
                     h('span', { className: 'calb-project-dot', style: { background: project.color } }),
                     h('span', null, project.label),
                     h('span', { className: 'calb-aside-project-count' }, `${goals.filter((goal) => goal.status === 'done').length}/${goals.length}`),
+                    h('button', {
+                      type: 'button',
+                      className: 'calb-icon-btn calb-aside-project-add',
+                      title: `在${project.label}新增目标`,
+                      onClick: () => onAddGoal(project.id),
+                    }, '+'),
                   ),
                   goals.map((goal) =>
                     h(
@@ -875,7 +903,7 @@ window.__ModuleLoader__.load({
                   ),
                 )
               }),
-          h('button', { type: 'button', className: 'calb-link calb-aside-add', onClick: onAddGoal }, '+ 新增月度目标'),
+          h('button', { type: 'button', className: 'calb-link calb-aside-add', onClick: () => onAddGoal() }, '+ 新增月度目标'),
         ),
         h(
           'section',
@@ -1066,16 +1094,137 @@ window.__ModuleLoader__.load({
       )
     }
 
+    function GoalForm({ initial, onClose, onSave }) {
+      const [draft, setDraft] = useState(() => ({ ...initial }))
+      const [error, setError] = useState('')
+      const [saving, setSaving] = useState(false)
+      const firstRef = useRef(null)
+
+      useEffect(() => {
+        setDraft({ ...initial })
+        setError('')
+        const timer = window.setTimeout(() => firstRef.current?.focus(), 30)
+        return () => window.clearTimeout(timer)
+      }, [initial])
+
+      const set = (field) => (event) => setDraft((current) => ({ ...current, [field]: event.target.value }))
+      const monthLabel = /^\d{4}-\d{2}-\d{2}$/.test(draft.date) ? formatMonth(draft.date) : '所选月份'
+
+      const submit = async (event) => {
+        event.preventDefault()
+        if (draft.title.trim() === '') {
+          setError('目标名称不能为空')
+          return
+        }
+        if (!/^\d{4}-\d{2}-\d{2}$/.test(draft.date)) {
+          setError('日期格式必须是 YYYY-MM-DD')
+          return
+        }
+        setSaving(true)
+        try {
+          await onSave({
+            ...draft,
+            title: draft.title.trim(),
+            metric: draft.metric.trim(),
+          })
+        } catch (reason) {
+          setError(reason?.message ?? '保存目标失败')
+          setSaving(false)
+        }
+      }
+
+      return h(
+        'div',
+        {
+          className: 'calb-detail-backdrop calb-confirm-backdrop',
+          onMouseDown: (event) => {
+            if (event.target === event.currentTarget && !saving) onClose()
+          },
+        },
+        h(
+          'form',
+          { className: 'calb-form calb-goal-form', onSubmit: submit },
+          h(
+            'header',
+            { className: 'calb-detail-head' },
+            h('div', null, h('div', { className: 'calb-detail-kicker' }, '月度目标'), h('h3', null, '这个月要交出什么？')),
+            h('button', { type: 'button', className: 'calb-icon-btn', onClick: onClose, title: '关闭' }, '×'),
+          ),
+          h(
+            'div',
+            { className: 'calb-form-body' },
+            h('label', { className: 'calb-field' }, h('span', null, '目标名称'), h('input', { ref: firstRef, value: draft.title, onChange: set('title'), placeholder: '例如：本月读完 1 本，产出 3 条笔记', maxLength: 200 })),
+            h('label', { className: 'calb-field' }, h('span', null, '怎么算完成（可空）'), h('input', { value: draft.metric, onChange: set('metric'), placeholder: '例如：3 条笔记 / ≥10 单', maxLength: 200 })),
+            h(
+              'div',
+              { className: 'calb-field-row' },
+              h('label', { className: 'calb-field' }, h('span', null, '项目'), h('select', { value: draft.project, onChange: set('project') }, PROJECTS.map((project) => h('option', { key: project.id, value: project.id }, project.label)))),
+              h('label', { className: 'calb-field' }, h('span', null, '归属日期'), h('input', { type: 'date', value: draft.date, onChange: set('date') })),
+            ),
+            h('div', { className: 'calb-form-hint' }, `保存后会出现在 ${monthLabel} 的「本月产出」里。`),
+            error ? h('div', { className: 'calb-error' }, error) : null,
+          ),
+          h(
+            'footer',
+            { className: 'calb-form-foot' },
+            h('button', { type: 'button', className: 'calb-btn', onClick: onClose, disabled: saving }, '取消'),
+            h('button', { type: 'submit', className: 'calb-btn calb-btn-primary', disabled: saving }, saving ? '保存中…' : '添加目标'),
+          ),
+        ),
+      )
+    }
+
+    function ConfirmDialog({ title, message, onClose, onConfirm }) {
+      const [busy, setBusy] = useState(false)
+      const [error, setError] = useState('')
+
+      const confirm = async () => {
+        setBusy(true)
+        setError('')
+        try {
+          await onConfirm()
+        } catch (reason) {
+          setError(reason?.message ?? '操作失败')
+          setBusy(false)
+        }
+      }
+
+      return h(
+        'div',
+        {
+          className: 'calb-detail-backdrop calb-confirm-backdrop',
+          onMouseDown: (event) => {
+            if (event.target === event.currentTarget && !busy) onClose()
+          },
+        },
+        h(
+          'section',
+          { className: 'calb-confirm', role: 'alertdialog', 'aria-modal': 'true', 'aria-label': title },
+          h('div', { className: 'calb-confirm-title' }, title),
+          h('p', { className: 'calb-confirm-message' }, message),
+          error ? h('div', { className: 'calb-error' }, error) : null,
+          h(
+            'div',
+            { className: 'calb-confirm-actions' },
+            h('button', { type: 'button', className: 'calb-btn', onClick: onClose, disabled: busy }, '取消'),
+            h('button', { type: 'button', className: 'calb-btn calb-danger', onClick: confirm, disabled: busy }, busy ? '删除中…' : '删除'),
+          ),
+        ),
+      )
+    }
+
     // --------------------------------------------------------------- shell
 
     function CalendarOverlay({ workspace }) {
-      const { plan, error, loading, mutate } = usePlan()
+      const { plan, capabilities, error, loading, mutate } = usePlan()
       const [open, setOpen] = useState(false)
       const [view, setView] = useState('month')
       const [cursor, setCursor] = useState(() => todayKey())
       const [selected, setSelected] = useState(() => todayKey())
       const [detailId, setDetailId] = useState(null)
       const [form, setForm] = useState(null)
+      const [goalForm, setGoalForm] = useState(null)
+      const [confirmTask, setConfirmTask] = useState(null)
       const [collapsed, setCollapsed] = useState(loadCollapsed)
       const [position, setPosition] = useState(loadPosition)
       const [toast, setToast] = useState('')
@@ -1112,17 +1261,27 @@ window.__ModuleLoader__.load({
       useEffect(() => {
         const onKey = (event) => {
           if (event.key !== 'Escape') return
-          if (form !== null) setForm(null)
+          if (confirmTask !== null) setConfirmTask(null)
+          else if (goalForm !== null) setGoalForm(null)
+          else if (form !== null) setForm(null)
           else if (detailId !== null) setDetailId(null)
           else if (open) setOpen(false)
         }
         document.addEventListener('keydown', onKey)
         return () => document.removeEventListener('keydown', onKey)
-      }, [detailId, form, open])
+      }, [confirmTask, detailId, form, goalForm, open])
 
       const tasks = plan?.tasks ?? []
       const goals = plan?.goals ?? []
+      const hostOutdated = plan !== null && (capabilities === null || capabilities.projects !== true)
       const detailTask = detailId === null ? null : tasks.find((task) => task.id === detailId) ?? null
+
+      const guardedMutate = useCallback(async (method, body) => {
+        if (hostOutdated) {
+          throw new Error('Host 还是旧版：请退出 DeepSeek Harness 再重新打开。重启前新增/勾选会把项目与节点标记剥掉。')
+        }
+        return mutate(method, body)
+      }, [hostOutdated, mutate])
 
       const openDay = (key) => {
         setSelected(key)
@@ -1132,20 +1291,19 @@ window.__ModuleLoader__.load({
       }
 
       const openFull = () => {
-        setCursor(selected)
+        const nextSelected = selected.slice(0, 7) === cursor.slice(0, 7) ? selected : startOfMonth(cursor)
+        setSelected(nextSelected)
         setView('month')
         setOpen(true)
       }
 
       const stepMonth = (direction) => {
-        const date = parseKey(cursor)
-        date.setMonth(date.getMonth() + direction)
-        setCursor(toKey(date))
+        setCursor(shiftMonth(cursor, direction))
       }
 
       const toggleTask = async (task) => {
         try {
-          await mutate('toggle', { id: task.id, done: task.status !== 'done' })
+          await guardedMutate('toggle', { id: task.id, done: task.status !== 'done' })
         } catch (reason) {
           notify(reason?.message ?? '更新失败')
         }
@@ -1153,42 +1311,45 @@ window.__ModuleLoader__.load({
 
       const toggleGoal = async (goal) => {
         try {
-          await mutate('goal-toggle', { id: goal.id, done: goal.status !== 'done' })
+          await guardedMutate('goal-toggle', { id: goal.id, done: goal.status !== 'done' })
         } catch (reason) {
           notify(reason?.message ?? '更新失败')
         }
       }
 
       const saveTask = async (draft) => {
-        await mutate('upsert', { task: draft })
+        await guardedMutate('upsert', { task: draft })
         setForm(null)
         notify(draft.id ? '任务已更新' : '任务已添加')
       }
 
-      const removeTask = async (task) => {
-        if (!window.confirm(`删除「${task.title}」？`)) return
-        try {
-          await mutate('remove', { id: task.id })
-          setDetailId(null)
-          notify('任务已删除')
-        } catch (reason) {
-          notify(reason?.message ?? '删除失败')
-        }
+      const requestRemove = (task) => setConfirmTask(task)
+
+      const performRemove = async () => {
+        if (confirmTask === null) return
+        await guardedMutate('remove', { id: confirmTask.id })
+        setConfirmTask(null)
+        setDetailId(null)
+        notify('任务已删除')
       }
 
-      const addGoal = async () => {
-        const title = window.prompt('目标名称（例如：14 天 10 个非亲友付费）')
-        if (title === null || title.trim() === '') return
-        const metric = window.prompt('怎么算完成？（可留空，例如：≥10 单）') ?? ''
-        const picked = window.prompt('项目：half / reading / ftc / x / local / other', 'half')
-        if (picked === null) return
-        const project = PROJECTS.some((item) => item.id === picked.trim()) ? picked.trim() : 'other'
-        try {
-          await mutate('goal-upsert', { goal: { title: title.trim(), metric: metric.trim(), date: endOfMonth(cursor), project } })
-          notify(`已添加到 ${projectLabel(project)} 的本月产出`)
-        } catch (reason) {
-          notify(reason?.message ?? '添加目标失败')
-        }
+      const openGoalForm = (projectId) => {
+        const project = PROJECTS.some((item) => item.id === projectId) ? projectId : 'reading'
+        setDetailId(null)
+        setForm(null)
+        setGoalForm({
+          id: '',
+          title: '',
+          metric: '',
+          project,
+          date: endOfMonth(cursor),
+        })
+      }
+
+      const saveGoal = async (draft) => {
+        await guardedMutate('goal-upsert', { goal: draft })
+        setGoalForm(null)
+        notify(`已添加到 ${projectLabel(draft.project)} 的本月产出`)
       }
 
       const newTask = (date) => {
@@ -1292,6 +1453,7 @@ window.__ModuleLoader__.load({
           onDragEnd,
           onToggleGoal: toggleGoal,
           onResetPosition: resetPosition,
+          hostOutdated,
         }),
         error !== '' ? h('div', { className: 'calb-toast calb-toast-error' }, error) : null,
         toast !== '' ? h('div', { className: 'calb-toast' }, toast) : null,
@@ -1309,7 +1471,8 @@ window.__ModuleLoader__.load({
               onNewTask: newTask,
               onToggleTask: toggleTask,
               onToggleGoal: toggleGoal,
-              onAddGoal: addGoal,
+              onAddGoal: openGoalForm,
+              hostOutdated,
               mutate,
               notify,
             })
@@ -1320,7 +1483,7 @@ window.__ModuleLoader__.load({
               onClose: () => setDetailId(null),
               onToggle: () => toggleTask(detailTask),
               onEdit: () => editTask(detailTask),
-              onRemove: () => removeTask(detailTask),
+              onRemove: () => requestRemove(detailTask),
               onChat: () => openChat(detailTask),
             })
           : null,
@@ -1329,6 +1492,21 @@ window.__ModuleLoader__.load({
               initial: form,
               onClose: () => setForm(null),
               onSave: saveTask,
+            })
+          : null,
+        goalForm !== null
+          ? h(GoalForm, {
+              initial: goalForm,
+              onClose: () => setGoalForm(null),
+              onSave: saveGoal,
+            })
+          : null,
+        confirmTask !== null
+          ? h(ConfirmDialog, {
+              title: '删除任务',
+              message: `删除「${confirmTask.title}」？这会从 calendar/plan.json 里移除，不能撤销。`,
+              onClose: () => setConfirmTask(null),
+              onConfirm: performRemove,
             })
           : null,
       )
@@ -1366,6 +1544,7 @@ window.__ModuleLoader__.load({
       .calb-mini-dots{position:absolute;left:50%;bottom:2px;transform:translateX(-50%);display:flex;align-items:center;gap:2px}
       .calb-mini-dot{width:4px;height:4px;border-radius:50%;background:#e5484d}
       .calb-mini-dot.is-marker{background:#e0a100}
+      .calb-host-warning{margin:6px 10px 2px;border:1px solid rgba(217,119,6,.28);border-radius:7px;background:rgba(217,119,6,.09);color:#9a5b00;font-size:10px;line-height:1.45;padding:5px 7px}
       .calb-mini-goals{border-top:1px solid var(--dsw-alias-border-l1,rgba(31,35,41,.07));padding:7px 10px 4px;user-select:none}
       .calb-mini-goals-head{display:flex;align-items:center;justify-content:space-between;gap:6px;font-size:10px;font-weight:650;color:var(--dsw-alias-label-secondary,#5c6370);letter-spacing:.03em}
       .calb-mini-goals-count{font-weight:400;color:var(--dsw-alias-label-tertiary,#8a8f98)}
@@ -1491,6 +1670,8 @@ window.__ModuleLoader__.load({
       .calb-aside-project:first-of-type{border-top:0;padding-top:0}
       .calb-aside-project-head{display:flex;align-items:center;gap:5px;font-size:10px;font-weight:650;color:var(--dsw-alias-label-secondary,#5c6370);margin-bottom:2px}
       .calb-aside-project-count{margin-left:auto;font-weight:400;color:var(--dsw-alias-label-tertiary,#8a8f98)}
+      .calb-aside-project-add{width:16px;height:16px;padding:0;border:0;background:transparent;font-size:14px;line-height:1;color:var(--dsw-alias-label-tertiary,#8a8f98)}
+      .calb-aside-project-add:hover{background:var(--dsw-alias-interactive-bg-hover,rgba(31,35,41,.06));color:var(--dsw-alias-label-primary,#1f2329)}
       .calb-aside-add{margin-top:4px;font-size:10px}
       .calb-aside-markers{display:flex;flex-wrap:wrap;gap:4px;margin-bottom:6px}
       .calb-weekly-time{font-size:9px;color:var(--dsw-alias-label-tertiary,#8a8f98);flex:none;margin-left:auto}
@@ -1522,6 +1703,13 @@ window.__ModuleLoader__.load({
       .calb-field textarea{resize:vertical;min-height:56px}
       .calb-field-row{display:flex;gap:8px}
       .calb-form-foot{display:flex;justify-content:flex-end;gap:7px;margin-top:16px;padding-top:12px;border-top:1px solid var(--dsw-alias-border-l1,rgba(31,35,41,.07))}
+      .calb-form-hint{font-size:10px;color:var(--dsw-alias-label-tertiary,#8a8f98);line-height:1.45}
+      .calb-goal-form{width:min(520px,92vw)}
+      .calb-confirm-backdrop{z-index:86}
+      .calb-confirm{width:min(420px,92vw);border:1px solid var(--dsw-alias-border-l2,rgba(31,35,41,.12));border-radius:14px;background:var(--dsw-alias-bg-layer-1,#fff);box-shadow:0 26px 70px rgba(10,14,22,.3);padding:18px 18px 14px}
+      .calb-confirm-title{font-size:16px;font-weight:680;letter-spacing:-.01em}
+      .calb-confirm-message{margin:8px 0 14px;font-size:12px;line-height:1.55;color:var(--dsw-alias-label-secondary,#5c6370)}
+      .calb-confirm-actions{display:flex;justify-content:flex-end;gap:7px}
       .calb-error{border-radius:6px;background:rgba(229,72,77,.1);color:#c62f34;font-size:11px;padding:6px 8px}
       .calb-toast{position:fixed;left:50%;bottom:32px;transform:translateX(-50%);z-index:95;border-radius:8px;background:rgba(24,28,36,.92);color:#fff;font-size:12px;padding:8px 14px;box-shadow:0 10px 30px rgba(10,14,22,.28);pointer-events:none;max-width:80vw}
       .calb-toast-error{background:rgba(198,47,52,.95)}
