@@ -1,0 +1,6 @@
+{
+  "meta": {
+    "title": "日历",
+    "description": "主界面浮层日历：月/周/日视图、红点提醒、点任务打开对应会话。数据存在项目仓库 calendar/plan.json。"
+  }
+}

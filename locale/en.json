@@ -1,0 +1,6 @@
+{
+  "meta": {
+    "title": "Calendar",
+    "description": "Floating calendar in the DSH shell: month/week/day views, red dots, and task-to-session links. Data lives in calendar/plan.json."
+  }
+}

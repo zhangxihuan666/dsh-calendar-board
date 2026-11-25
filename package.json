@@ -1,0 +1,61 @@
+{
+  "name": "dsh-calendar-board",
+  "version": "0.1.2",
+  "description": "DeepSeek Harness 主界面日历：迷你月历、月/周/日视图、多项目任务、节点标记、本月产出、任务跳会话",
+  "type": "module",
+  "license": "MIT",
+  "author": "Zhang Xihuan",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/zhangxihuan666/dsh-calendar-board.git"
+  },
+  "homepage": "https://github.com/zhangxihuan666/dsh-calendar-board#readme",
+  "bugs": {
+    "url": "https://github.com/zhangxihuan666/dsh-calendar-board/issues"
+  },
+  "keywords": [
+    "dsh",
+    "dsh-plugin",
+    "calendar",
+    "planner",
+    "tasks",
+    "deepseek-harness"
+  ],
+  "engines": {
+    "node": ">=20",
+    "dsh": ">=0.2.1-rc.2 <0.3.0-0"
+  },
+  "exports": {
+    ".": "./index.js",
+    "./client": "./client.js",
+    "./locale/*.json": "./locale/*.json",
+    "./icon": "./icon.svg"
+  },
+  "files": [
+    "index.js",
+    "client.js",
+    "cordis.patch.yml",
+    "locale/*.json",
+    "icon.svg",
+    "README.md",
+    "SKILL.md",
+    "LICENSE",
+    "screenshots.json",
+    "assets/*",
+    "docs/*"
+  ],
+  "dsh": {
+    "bundle": {
+      "patch": "./cordis.patch.yml"
+    },
+    "client": {
+      "platform": "web",
+      "immediately": true,
+      "inject": [
+        "@deepseek-ai/dsh-client-ui-layout",
+        "@deepseek-ai/dsh-client-ui-workspace",
+        "@deepseek-ai/dsh-client-ui-conversation"
+      ]
+    }
+  }
+}
