@@ -207,11 +207,22 @@ window.__ModuleLoader__.load({
     // ------------------------------------------------------------------ api
 
     async function api(method, body) {
-      const response = await fetch(`${API}${method}`, {
-        method: 'POST',
-        headers: { 'content-type': 'application/json' },
-        body: JSON.stringify(body ?? {}),
-      })
+      const controller = new AbortController()
+      const timer = setTimeout(() => controller.abort(), 8000)
+      let response
+      try {
+        response = await fetch(`${API}${method}`, {
+          method: 'POST',
+          headers: { 'content-type': 'application/json' },
+          body: JSON.stringify(body ?? {}),
+          signal: controller.signal,
+        })
+      } catch (error) {
+        if (error?.name === 'AbortError') throw new Error('日历接口超时：Host 无响应，请重启 DSH 后再试')
+        throw error
+      } finally {
+        clearTimeout(timer)
+      }
       let payload
       try {
         payload = await response.json()
@@ -226,7 +237,7 @@ window.__ModuleLoader__.load({
 
     function loadPosition() {
       try {
-        const raw = window.localStorage.getItem(LS_POS)
+        const raw = window.sessionStorage.getItem(LS_POS)
         if (raw !== null) {
           const parsed = JSON.parse(raw)
           if (Number.isFinite(parsed?.x) && Number.isFinite(parsed?.y)) return parsed
@@ -242,7 +253,7 @@ window.__ModuleLoader__.load({
 
     function savePosition(pos) {
       try {
-        window.localStorage.setItem(LS_POS, JSON.stringify(pos))
+        window.sessionStorage.setItem(LS_POS, JSON.stringify(pos))
       } catch {
         // Ignore unavailable storage.
       }
@@ -250,7 +261,7 @@ window.__ModuleLoader__.load({
 
     function loadCollapsed() {
       try {
-        return window.localStorage.getItem(LS_COLLAPSED) === '1'
+        return window.sessionStorage.getItem(LS_COLLAPSED) === '1'
       } catch {
         return false
       }
@@ -258,7 +269,7 @@ window.__ModuleLoader__.load({
 
     function saveCollapsed(value) {
       try {
-        window.localStorage.setItem(LS_COLLAPSED, value ? '1' : '0')
+        window.sessionStorage.setItem(LS_COLLAPSED, value ? '1' : '0')
       } catch {
         // Ignore unavailable storage.
       }
@@ -299,6 +310,7 @@ window.__ModuleLoader__.load({
       const [capabilities, setCapabilities] = useState(null)
       const [error, setError] = useState('')
       const [loading, setLoading] = useState(true)
+      const channelRef = useRef(null) // 兼容旧缓存 bundle；新逻辑不自动广播
 
       const load = useCallback(async () => {
         try {
@@ -315,18 +327,8 @@ window.__ModuleLoader__.load({
       }, [])
 
       useEffect(() => {
+        // 只在打开时读一次；不自动轮询，避免跨聊天框自动串改。
         load()
-        const timer = window.setInterval(() => {
-          if (document.visibilityState === 'visible') load()
-        }, 30000)
-        const onVisible = () => {
-          if (document.visibilityState === 'visible') load()
-        }
-        document.addEventListener('visibilitychange', onVisible)
-        return () => {
-          window.clearInterval(timer)
-          document.removeEventListener('visibilitychange', onVisible)
-        }
       }, [load])
 
       const mutate = useCallback(async (method, body) => {
@@ -346,7 +348,7 @@ window.__ModuleLoader__.load({
       const {
         plan, cursor, collapsed, position, onPrev, onNext, onOpenDay,
         onOpenFull, onToggleCollapsed, onDragStart, onDragMove, onDragEnd,
-        onToggleGoal, onResetPosition, hostOutdated,
+        onToggleGoal, onResetPosition, onRefresh, hostOutdated,
       } = props
       const byDate = useMemo(() => groupByDate(plan.tasks), [plan.tasks])
       const markersByDate = useMemo(() => groupMarkers(plan.markers), [plan.markers])
@@ -404,6 +406,7 @@ window.__ModuleLoader__.load({
               { className: 'calb-card-actions', onPointerDown: (event) => event.stopPropagation() },
               h('button', { type: 'button', className: 'calb-icon-btn', title: '上个月', onClick: onPrev }, '‹'),
               h('button', { type: 'button', className: 'calb-icon-btn', title: '下个月', onClick: onNext }, '›'),
+              h('button', { type: 'button', className: 'calb-icon-btn', title: '从磁盘刷新', onClick: onRefresh }, '↻'),
               h('button', { type: 'button', className: 'calb-icon-btn', title: '复位到右下角', onClick: onResetPosition }, '⌖'),
               h('button', { type: 'button', className: 'calb-icon-btn', title: '收起', onClick: onToggleCollapsed }, '–'),
             ),
@@ -495,7 +498,7 @@ window.__ModuleLoader__.load({
       const {
         plan, view, cursor, selected, onView, onCursor, onSelect, onClose,
         onOpenTask, onNewTask, onToggleTask, onToggleGoal, onAddGoal,
-        hostOutdated,
+        onRefresh, hostOutdated, embedded = false,
       } = props
       const byDate = useMemo(() => groupByDate(plan.tasks), [plan.tasks])
       const markersByDate = useMemo(() => groupMarkers(plan.markers), [plan.markers])
@@ -533,14 +536,14 @@ window.__ModuleLoader__.load({
       return h(
         'div',
         {
-          className: 'calb-backdrop',
+          className: `calb-backdrop${embedded ? ' is-embedded' : ''}`,
           onMouseDown: (event) => {
-            if (event.target === event.currentTarget) onClose()
+            if (!embedded && event.target === event.currentTarget) onClose()
           },
         },
         h(
           'section',
-          { className: 'calb-modal', role: 'dialog', 'aria-modal': 'true', 'aria-label': '日历' },
+          { className: 'calb-modal', role: embedded ? 'region' : 'dialog', 'aria-modal': embedded ? undefined : 'true', 'aria-label': '日历' },
           h(
             'header',
             { className: 'calb-modal-head' },
@@ -556,6 +559,7 @@ window.__ModuleLoader__.load({
               h('button', { type: 'button', className: 'calb-btn', onClick: goToday }, '今天'),
               h('button', { type: 'button', className: 'calb-icon-btn', onClick: () => step(-1), title: '上一段' }, '‹'),
               h('button', { type: 'button', className: 'calb-icon-btn', onClick: () => step(1), title: '下一段' }, '›'),
+              h('button', { type: 'button', className: 'calb-icon-btn', onClick: onRefresh, title: '从磁盘刷新' }, '↻'),
               h(
                 'div',
                 { className: 'calb-tabs', role: 'tablist' },
@@ -574,7 +578,7 @@ window.__ModuleLoader__.load({
                   ),
                 ),
               ),
-              h('button', { type: 'button', className: 'calb-icon-btn calb-close', onClick: onClose, title: '关闭' }, '×'),
+              embedded ? null : h('button', { type: 'button', className: 'calb-icon-btn calb-close', onClick: onClose, title: '关闭' }, '×'),
             ),
           ),
           h(
@@ -855,6 +859,20 @@ window.__ModuleLoader__.load({
     }
 
     function Aside({ plan, monthTasks, cursor, selected, selectedTasks, selectedMarkers, onOpenTask, onToggleGoal, onAddGoal, hostOutdated }) {
+      const [history, setHistory] = useState([])
+      useEffect(() => {
+        let live = true
+        api('history')
+          .then((result) => {
+            if (live) setHistory(Array.isArray(result?.items) ? result.items.slice(0, 4) : [])
+          })
+          .catch(() => {
+            if (live) setHistory([])
+          })
+        return () => {
+          live = false
+        }
+      }, [plan.rev])
       const monthGoals = useMemo(
         () => plan.goals.filter((goal) => goal.date !== null && goal.date.slice(0, 7) === cursor.slice(0, 7)),
         [plan.goals, cursor],
@@ -931,6 +949,39 @@ window.__ModuleLoader__.load({
               }),
           h('button', { type: 'button', className: 'calb-link calb-aside-add', onClick: () => onAddGoal() }, '+ 新增月度目标'),
         ),
+        history.length > 0
+          ? h(
+              'section',
+              { className: 'calb-panel calb-history' },
+              h(
+                'div',
+                { className: 'calb-panel-head' },
+                h('h3', null, '最近变更'),
+                h('span', { className: 'calb-panel-count' }, '自动记录'),
+              ),
+              history.map((entry) => {
+                const action = entry.action === 'remove'
+                  ? '删除'
+                  : entry.action === 'toggle'
+                    ? (entry.afterStatus === 'done' ? '完成' : '撤销')
+                    : entry.action === 'goal-toggle'
+                      ? (entry.afterStatus === 'done' ? '目标完成' : '目标撤销')
+                      : entry.action === 'goal-upsert'
+                        ? '更新目标'
+                        : (entry.beforeStatus === null ? '新增' : '更新')
+                const time = typeof entry.at === 'string'
+                  ? new Date(entry.at).toLocaleTimeString('zh-CN', { hour: '2-digit', minute: '2-digit' })
+                  : ''
+                return h(
+                  'div',
+                  { key: `${entry.at}-${entry.id}-${entry.rev}`, className: 'calb-history-item' },
+                  h('span', { className: 'calb-history-action' }, action),
+                  h('span', { className: 'calb-history-title' }, entry.title || entry.id),
+                  h('span', { className: 'calb-history-time' }, time),
+                )
+              }),
+            )
+          : null,
         h(
           'section',
           { className: 'calb-panel' },
@@ -984,7 +1035,7 @@ window.__ModuleLoader__.load({
                   ),
                 )
               }),
-          h('div', { className: 'calb-aside-note' }, '数据在 calendar/plan.json；红点=今天，黄点=节日/节点。页面每 30 秒刷新。'),
+          h('div', { className: 'calb-aside-note' }, '数据在 calendar/plan.json；红点=今天，黄点=节日/节点。页面不自动刷新；外部改动后点 ↻ 重新读取。改动自动记录到 history/changes.jsonl。'),
         ),
       )
     }
@@ -1479,6 +1530,7 @@ window.__ModuleLoader__.load({
           onDragEnd,
           onToggleGoal: toggleGoal,
           onResetPosition: resetPosition,
+          onRefresh: load,
           hostOutdated,
         }),
         error !== '' ? h('div', { className: 'calb-toast calb-toast-error' }, error) : null,
@@ -1498,6 +1550,7 @@ window.__ModuleLoader__.load({
               onToggleTask: toggleTask,
               onToggleGoal: toggleGoal,
               onAddGoal: openGoalForm,
+              onRefresh: load,
               hostOutdated,
               mutate,
               notify,
@@ -1589,6 +1642,12 @@ window.__ModuleLoader__.load({
       .calb-pill-dot{width:6px;height:6px;border-radius:50%;background:#e5484d}
       .calb-loading{pointer-events:auto;padding:18px;color:var(--dsw-alias-label-tertiary,#8a8f98);font-size:12px}
       .calb-backdrop{position:fixed;inset:0;z-index:70;display:flex;align-items:center;justify-content:center;padding:24px;background:rgba(10,14,22,.42);backdrop-filter:blur(3px);pointer-events:auto}
+      .calb-backdrop.is-embedded{position:relative;inset:auto;display:block;height:100%;padding:0;background:transparent;backdrop-filter:none}
+      .calb-backdrop.is-embedded .calb-modal{width:100%;max-width:none;height:100%;max-height:none;border:0;border-radius:0;box-shadow:none}
+      .calb-backdrop.is-embedded .calb-modal-body{min-height:0;min-width:0}
+      .calb-backdrop.is-embedded .calb-main{min-width:0}
+      .calb-backdrop.is-embedded .calb-close{display:none}
+      .calb-page{height:100%;min-height:0;background:var(--dsw-alias-bg-base,#fff)}
       .calb-modal{display:flex;flex-direction:column;width:min(1080px,94vw);max-height:86vh;border:1px solid var(--dsw-alias-border-l2,rgba(31,35,41,.12));border-radius:18px;background:var(--dsw-alias-bg-layer-1,#fff);box-shadow:0 30px 90px rgba(10,14,22,.34);overflow:hidden}
       .calb-modal-head{display:flex;align-items:flex-start;justify-content:space-between;gap:16px;padding:18px 20px 14px;border-bottom:1px solid var(--dsw-alias-border-l1,rgba(31,35,41,.07))}
       .calb-modal-eyebrow{font-size:10px;letter-spacing:.14em;color:var(--dsw-alias-label-tertiary,#8a8f98);margin-bottom:3px}
@@ -1601,10 +1660,14 @@ window.__ModuleLoader__.load({
       .calb-modal-body{display:grid;grid-template-columns:minmax(0,1fr) 302px;flex:1;min-height:0;overflow:hidden}
       .calb-main{overflow:auto;padding:14px 16px 20px;min-height:0}
       .calb-aside{overflow:auto;border-left:1px solid var(--dsw-alias-border-l1,rgba(31,35,41,.07));padding:14px 14px 20px;background:var(--dsw-alias-bg-layer-2,rgba(248,249,251,.6))}
-      .calb-month-dow,.calb-month-grid{display:grid;grid-template-columns:repeat(7,1fr)}
+      .calb-history-item{display:grid;grid-template-columns:auto minmax(0,1fr) auto;gap:6px;align-items:center;padding:4px 0;font-size:11px;border-top:1px solid var(--dsw-alias-border-l1,rgba(31,35,41,.06))}
+      .calb-history-action{color:var(--dsw-alias-brand-primary,#4f7cff);font-weight:600}
+      .calb-history-title{overflow:hidden;text-overflow:ellipsis;white-space:nowrap;color:var(--dsw-alias-label-secondary,#5d6470)}
+      .calb-history-time{color:var(--dsw-alias-label-tertiary,#8a8f98);font-variant-numeric:tabular-nums}
+      .calb-month-dow,.calb-month-grid{display:grid;grid-template-columns:repeat(7,minmax(0,1fr))}
       .calb-month-dow{color:var(--dsw-alias-label-tertiary,#8a8f98);font-size:10px;text-align:center;padding-bottom:4px}
       .calb-month-grid{gap:5px}
-      .calb-month-cell{min-height:96px;border:1px solid var(--dsw-alias-border-l1,rgba(31,35,41,.07));border-radius:9px;padding:5px;background:var(--dsw-alias-bg-layer-1,#fff);cursor:pointer;transition:border-color .12s ease,background .12s ease}
+      .calb-month-cell{min-width:0;min-height:88px;border:1px solid var(--dsw-alias-border-l1,rgba(31,35,41,.07));border-radius:9px;padding:5px;background:var(--dsw-alias-bg-layer-1,#fff);cursor:pointer;transition:border-color .12s ease,background .12s ease}
       .calb-month-cell:hover{border-color:var(--dsw-alias-border-l4,rgba(31,35,41,.2));background:var(--dsw-alias-bg-layer-2,rgba(248,249,251,.7))}
       .calb-month-cell.is-out{opacity:.42}
       .calb-month-cell.is-today{border-color:var(--dsw-alias-brand-primary,#4f7cff)}
@@ -1704,7 +1767,7 @@ window.__ModuleLoader__.load({
       .calb-badge-project{background:transparent;border:1px solid currentColor}
       .calb-btn{display:inline-flex;align-items:center;justify-content:center;height:28px;padding:0 11px;border:1px solid var(--dsw-alias-border-l2,rgba(31,35,41,.14));border-radius:7px;background:var(--dsw-alias-bg-layer-1,#fff);color:var(--dsw-alias-label-primary,#1f2329);font:inherit;font-size:12px;cursor:pointer}
       .calb-btn:hover{background:var(--dsw-alias-interactive-bg-hover,rgba(31,35,41,.06))}
-      .calb-btn-primary{background:var(--dsw-alias-brand-primary,#4f7cff);border-color:transparent;color:#fff;font-weight:600}
+      .calb-btn-primary{background:#4f7cff !important;border-color:transparent;color:#fff !important;font-weight:600}
       .calb-btn-primary:hover{background:var(--dsw-alias-brand-primary,#3f6df0);filter:brightness(.96)}
       .calb-btn:disabled{opacity:.55;cursor:default}
       .calb-danger{color:#e5484d;border-color:rgba(229,72,77,.35)}
@@ -1752,8 +1815,120 @@ window.__ModuleLoader__.load({
 
     // ---------------------------------------------------------------- apply
 
+    function CalendarPage({ workspace }) {
+      const { plan, capabilities, error, loading, load, mutate } = usePlan()
+      const [view, setView] = useState('month')
+      const [cursor, setCursor] = useState(() => todayKey())
+      const [selected, setSelected] = useState(() => todayKey())
+      const [detailId, setDetailId] = useState(null)
+      const [form, setForm] = useState(null)
+      const [goalForm, setGoalForm] = useState(null)
+      const [confirmTask, setConfirmTask] = useState(null)
+      const [toast, setToast] = useState('')
+      const toastTimer = useRef(null)
+
+      const notify = useCallback((message) => {
+        setToast(message)
+        if (toastTimer.current !== null) window.clearTimeout(toastTimer.current)
+        toastTimer.current = window.setTimeout(() => setToast(''), 3200)
+      }, [])
+
+      useEffect(() => () => {
+        if (toastTimer.current !== null) window.clearTimeout(toastTimer.current)
+      }, [])
+
+      const tasks = plan?.tasks ?? []
+      const hostOutdated = plan !== null && (capabilities === null || capabilities.projects !== true)
+      const detailTask = detailId === null ? null : tasks.find((task) => task.id === detailId) ?? null
+
+      const guardedMutate = useCallback(async (method, body) => {
+        if (hostOutdated) throw new Error('Host 还是旧版：请退出 DeepSeek Harness 再重新打开。')
+        return mutate(method, body)
+      }, [hostOutdated, mutate])
+
+      const newTask = (date) => setForm({
+        id: '', title: '', date, time: null, status: 'todo', line: '运营', project: 'half',
+        priority: null, outcome: '', note: '', prompt: '', source: '', sessionId: null,
+      })
+
+      const openGoalForm = (projectId) => {
+        const project = PROJECTS.some((item) => item.id === projectId) ? projectId : 'reading'
+        setGoalForm({ id: '', title: '', metric: '', project, date: endOfMonth(cursor) })
+      }
+
+      const openChat = (task) => {
+        if (!workspace) { notify('会话服务还没就绪'); return }
+        try {
+          if (task.sessionId) workspace.openSession(task.sessionId)
+          else workspace.startSession(undefined, { prompt: buildPrompt(task), whenDraftExists: 'append' })
+        } catch (reason) { notify(reason?.message ?? '打开会话失败') }
+      }
+
+      if (loading && plan === null) {
+        return h('div', { className: 'calb-page' },
+          h('div', { className: 'calb-card calb-loading', style: { margin: '48px auto', maxWidth: '420px' } }, '日历加载中…'))
+      }
+      if (error && plan === null) {
+        return h('div', { className: 'calb-page' },
+          h('div', { className: 'calb-card', style: { margin: '48px auto', maxWidth: '520px', padding: '18px' } },
+            h('div', { style: { fontWeight: 600, marginBottom: '8px' } }, '日历没读出来'),
+            h('div', { style: { color: 'var(--dsw-alias-label-secondary,#666)', fontSize: '12px', lineHeight: 1.6 } }, error),
+            h('button', { type: 'button', className: 'calb-btn', style: { marginTop: '12px' }, onClick: load }, '重试')))
+      }
+
+      return h('div', { className: 'calb-page' },
+        h(FullCalendar, {
+          plan: plan ?? { tasks: [], goals: [], markers: [] },
+          view, cursor, selected,
+          onView: setView,
+          onCursor: setCursor,
+          onSelect: setSelected,
+          onClose: () => {},
+          onOpenTask: (task) => setDetailId(task.id),
+          onNewTask: newTask,
+          onToggleTask: async (task) => { try { await guardedMutate('toggle', { id: task.id, done: task.status !== 'done' }) } catch (reason) { notify(reason?.message ?? '更新失败') } },
+          onToggleGoal: async (goal) => { try { await guardedMutate('goal-toggle', { id: goal.id, done: goal.status !== 'done' }) } catch (reason) { notify(reason?.message ?? '更新失败') } },
+          onAddGoal: openGoalForm,
+          onRefresh: load,
+          hostOutdated,
+          embedded: true,
+        }),
+        detailTask === null ? null : h(TaskDetail, {
+          task: detailTask,
+          onClose: () => setDetailId(null),
+          onToggle: async (task) => { try { await guardedMutate('toggle', { id: task.id, done: task.status !== 'done' }) } catch (reason) { notify(reason?.message ?? '更新失败') } },
+          onEdit: (task) => { setDetailId(null); setForm({ ...task }) },
+          onRemove: (task) => setConfirmTask(task),
+          onChat: openChat,
+        }),
+        form === null ? null : h(TaskForm, {
+          initial: form,
+          onClose: () => setForm(null),
+          onSave: async (draft) => { await guardedMutate('upsert', { task: draft }); setForm(null); notify(draft.id ? '任务已更新' : '任务已添加') },
+        }),
+        goalForm === null ? null : h(GoalForm, {
+          initial: goalForm,
+          onClose: () => setGoalForm(null),
+          onSave: async (draft) => { await guardedMutate('goal-upsert', { goal: draft }); setGoalForm(null); notify(`已添加到 ${projectLabel(draft.project)} 的本月产出`) },
+        }),
+        confirmTask === null ? null : h(ConfirmDialog, {
+          title: '删除这个任务？',
+          message: confirmTask.title,
+          onClose: () => setConfirmTask(null),
+          onConfirm: async () => { await guardedMutate('remove', { id: confirmTask.id }); setConfirmTask(null); setDetailId(null); notify('任务已删除') },
+        }),
+        toast === '' ? null : h('div', { className: 'calb-toast' }, toast))
+    }
+
+    function CalendarIcon() {
+      return h('svg', { width: 18, height: 18, viewBox: '0 0 24 24', fill: 'none', stroke: 'currentColor', strokeWidth: 1.8, strokeLinecap: 'round', 'data-dsh-calendar-entry': '1' },
+        h('rect', { x: 3, y: 5, width: 18, height: 16, rx: 2 }),
+        h('path', { d: 'M8 3v4M16 3v4M3 10h18' }),
+        h('circle', { cx: 12, cy: 15, r: 1.4, fill: 'currentColor', stroke: 'none' }))
+    }
+
     return {
-      inject: ['slots', 'uiWorkspace'],
+      inject: ['slots', 'uiWorkspace', 'layout'],
       apply(ctx) {
         ctx.effect(() => {
           const style = document.createElement('style')
@@ -1763,11 +1938,42 @@ window.__ModuleLoader__.load({
           return () => style.remove()
         }, 'dsh-calendar-board: styles')
 
-        ctx.slots.inject('shell.overlay', () => ctx.slots.register({
-          name: 'shell.overlay',
-          id: 'dsh-calendar-board',
-          inject: () => ({ workspace: ctx.uiWorkspace }),
-        }, CalendarOverlay))
+        ctx.slots.inject('main', () => {
+          const handle = ctx.slots.register({
+            name: 'main',
+            key: 'calendar-board',
+            inject: () => ({ workspace: ctx.uiWorkspace }),
+          }, CalendarPage)
+          window.setTimeout(() => {
+            try { ctx.layout?.selectPanel?.('calendar-board') } catch {}
+          }, 50)
+          return handle
+        })
+        ctx.slots.inject('sidebar.panellist', () => ctx.slots.register({
+          name: 'sidebar.panellist',
+          id: 'calendar-board',
+          order: 10,
+          label: () => '日历',
+        }, CalendarIcon))
+        ctx.effect(() => {
+          let tries = 0
+          const timer = window.setInterval(() => {
+            tries += 1
+            if (document.querySelector('.calb-page') !== null) {
+              window.clearInterval(timer)
+              return
+            }
+            const button = Array.from(document.querySelectorAll('button'))
+              .find((item) => item.textContent.trim() === '日历' && item.closest('.calb-page') === null)
+            if (button) {
+              button.click()
+              window.clearInterval(timer)
+              return
+            }
+            if (tries >= 40) window.clearInterval(timer)
+          }, 500)
+          return () => window.clearInterval(timer)
+        }, 'dsh-calendar-board: open panel')
       },
     }
   },

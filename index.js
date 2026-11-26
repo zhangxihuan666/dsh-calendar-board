@@ -6,7 +6,7 @@
  * POST route; the browser half never touches the filesystem.
  */
 
-import { existsSync, mkdirSync, readFileSync, renameSync, writeFileSync } from 'node:fs'
+import { appendFileSync, existsSync, mkdirSync, readFileSync, renameSync, writeFileSync } from 'node:fs'
 import { homedir } from 'node:os'
 import { dirname, join } from 'node:path'
 
@@ -200,7 +200,7 @@ function readPlan(file) {
 
 function writePlan(file, plan, mutate) {
   const now = new Date().toISOString()
-  const next = mutate({ ...plan, tasks: [...plan.tasks], goals: [...plan.goals], markers: [...plan.markers] }, now)
+  const next = mutate({ ...plan, tasks: plan.tasks.map((task) => ({ ...task })), goals: plan.goals.map((goal) => ({ ...goal })), markers: plan.markers.map((marker) => ({ ...marker })) }, now)
   next.version = 1
   next.rev = plan.rev + 1
   next.updatedAt = now
@@ -216,6 +216,63 @@ function writePlan(file, plan, mutate) {
     throw fail('io-error', `写入 plan.json 失败：${error.message}`)
   }
   return next
+}
+
+function historyFile(file) {
+  return join(dirname(file), 'history', 'changes.jsonl')
+}
+
+function describeChange(method, body, before, after) {
+  const entity = method.startsWith('goal') ? 'goal' : 'task'
+  const id = text(body.id ?? body.task?.id ?? body.goal?.id, 120)
+  const beforeItem = entity === 'goal'
+    ? before.goals.find((item) => item.id === id)
+    : before.tasks.find((item) => item.id === id)
+  const afterItem = entity === 'goal'
+    ? after.goals.find((item) => item.id === id)
+    : after.tasks.find((item) => item.id === id)
+  const item = afterItem ?? beforeItem ?? {}
+  return {
+    at: after.updatedAt,
+    rev: after.rev,
+    action: method,
+    entity,
+    id,
+    title: text(item.title, 300),
+    project: text(item.project, 40),
+    status: text(item.status, 20),
+    date: typeof item.date === 'string' ? item.date : '',
+    beforeStatus: beforeItem?.status ?? null,
+    afterStatus: afterItem?.status ?? null,
+  }
+}
+
+function appendHistory(file, entry) {
+  try {
+    const target = historyFile(file)
+    mkdirSync(dirname(target), { recursive: true })
+    appendFileSync(target, `${JSON.stringify(entry)}\n`, 'utf8')
+  } catch {
+    // History is best-effort; never block a calendar write.
+  }
+}
+
+function readHistory(file, limit = 20) {
+  const target = historyFile(file)
+  if (!existsSync(target)) return []
+  try {
+    const lines = readFileSync(target, 'utf8').trim().split('\n').filter(Boolean)
+    return lines.slice(-Math.max(1, Math.min(100, limit))).reverse().flatMap((line) => {
+      try {
+        const entry = JSON.parse(line)
+        return entry !== null && typeof entry === 'object' ? [entry] : []
+      } catch {
+        return []
+      }
+    })
+  } catch {
+    return []
+  }
 }
 
 function upsertTask(plan, raw) {
@@ -306,7 +363,11 @@ export function apply(ctx, config = {}) {
     }
     try {
       if (method === 'load') {
-        writeJson(res, 200, { ok: true, result: { plan: readPlan(file), capabilities: { projects: true, markers: true } } })
+        writeJson(res, 200, { ok: true, result: { plan: readPlan(file), capabilities: { projects: true, markers: true, history: true } } })
+        return
+      }
+      if (method === 'history') {
+        writeJson(res, 200, { ok: true, result: { items: readHistory(file, 30) } })
         return
       }
       if (!['upsert', 'remove', 'toggle', 'goal-toggle', 'goal-upsert'].includes(method)) {
@@ -315,6 +376,7 @@ export function apply(ctx, config = {}) {
       const body = await readJson(req)
       const plan = readPlan(file)
       const next = writePlan(file, plan, (draft, now) => applyMutation(draft, method, body, now))
+      appendHistory(file, describeChange(method, body, plan, next))
       writeJson(res, 200, { ok: true, result: { plan: next } })
     } catch (error) {
       const code = error?.code ?? 'internal'

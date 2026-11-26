@@ -1,6 +1,6 @@
 ---
 name: dsh-calendar-board
-description: 在 DeepSeek Harness 主界面维护一张「项目日历」：迷你月历只标今天、节点用黄点；月/周/日视图按项目分组；任务可一键跳转到对应聊天；本月产出可勾选。当用户说“把这件事排进日历”“今天要做什么”“这个月要产出什么”“把任务标完成”“加一个节点/节日”，或需要读取/修改 `calendar/plan.json` 时使用。
+description: 在 DeepSeek Harness 主界面维护一张「项目日历」：左侧栏「日历」主面板，启动自动打开；只标今天、节点用黄点；月/周/日视图按项目分组；任务可一键跳转到对应聊天；本月产出可勾选。当用户说“把这件事排进日历”“今天要做什么”“这个月要产出什么”“把任务标完成”“加一个节点/节日”，或需要读取/修改 `calendar/plan.json` 时使用。
 ---
 
 # DSH Calendar Board
@@ -131,7 +131,7 @@ ln -sf "/path/to/project/calendar/plan.json" ~/Desktop/calendar/plan.json
    - 差：`写小红书`
    - 好：`发布第 4 篇，评论 ≥20 条`
 4. 如果这件事需要 AI 接着做，把上下文写进 `prompt`；不要只写“帮我做”。
-5. 原子写：写 `plan.json.tmp`，再 `rename`。不要边写边让 UI 轮询读到半截 JSON。
+5. 原子写：写 `plan.json.tmp`，再 `rename`。不要边写边让 UI 依赖自动轮询读到半截 JSON；改完让用户在日历里点 `↻` 刷新。
 
 ### 2. 完成 / 撤销
 
@@ -157,7 +157,7 @@ ln -sf "/path/to/project/calendar/plan.json" ~/Desktop/calendar/plan.json
 
 ## 和 UI 的对应关系
 
-- 迷你月历：只有**今天**一个红点；`markers` 日期显示黄点（节日）/绿点（节点）。
+- 主面板月历：只有**今天**一个红点；`markers` 日期显示黄点（节日）/绿点（节点）。
 - 「本月要产出」：本月 `goals` 前三条，可直接勾选；「看全部」打开大日历。
 - 大日历：月 / 周 / 日三视图；任务 chip 左边框是项目色；右侧「本月产出」按项目分组。
 - 日视图：按项目分组，每组内部是自适应网格；任务卡有勾选框、打开聊天、查看。
@@ -194,10 +194,11 @@ ln -sf "/path/to/project/calendar/plan.json" ~/Desktop/calendar/plan.json
 | 现象 | 原因 | 处理 |
 |---|---|---|
 | 黄点/项目颜色消失 | Host 还是旧版，`normalizePlan` 把 `markers/project` 剥了 | 重启 DSH，让 Host 重新加载；不要在旧 Host 下批量勾任务 |
-| 迷你卡挡住输入框 | 旧位置缓存在 localStorage | 点 `⌖` 复位，或清 `dsh-calendar-board:pos:v4` |
+| 启动没自动打开日历 | 主面板注册失败/旧缓存 | 完全退出 DSH 再开；点左侧栏「日历」 |
 | 页面 403 | 没有浏览器 auth cookie | 在 DSH 窗口内操作；不要放宽 `requestRejection` |
 | 任务不出现 | `date` 格式错 / `status` 不是 `todo|done` / JSON 坏了 | 先 `node -e "JSON.parse(...)"` 校验 |
 | 两个 agent 同时写 | 一个读旧 `rev` 后整包覆盖 | 只做逐条 upsert；大改前先备份 `plan.json` |
+| 想看改了什么 | 只看到当前状态 | 读同目录 `history/changes.jsonl`；每行含 `at/rev/action/title/beforeStatus/afterStatus` |
 
 ## 交付前自检
 
@@ -213,7 +214,7 @@ node -e "JSON.parse(require('fs').readFileSync(process.env.HOME+'/Desktop/calend
 
 缩图常驻右下角，只有今天一个红点：
 
-![迷你日历](assets/mini-calendar.png)
+![日历主面板](assets/main-panel.png)
 
 点开是月视图，右侧按项目列本月产出：
 

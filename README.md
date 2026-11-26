@@ -1,10 +1,10 @@
 # dsh-calendar-board
 
-DeepSeek Harness 主界面上的项目日历：右下角一张迷你月历，点开是月 / 周 / 日三视图；任务按项目分组，点一下就能跳进对应聊天。
+DeepSeek Harness 里的项目日历：注册为左侧栏「日历」主面板，启动后自动打开；月 / 周 / 日三视图，任务按项目分组，点一下就能跳进对应聊天。
 
 缩图（常驻右下角）：
 
-![迷你日历](assets/mini-calendar.png)
+![日历主面板](assets/main-panel.png)
 
 点开后的月视图（左侧大日历，右侧「本月产出」按项目分组，下方是选中日的任务）：
 
@@ -20,14 +20,14 @@ DeepSeek Harness 主界面上的项目日历：右下角一张迷你月历，点
 
 ## 功能
 
-- **迷你月历**：可拖动、可收起、可复位；今天唯一红点；节点黄/绿点；本月目标前三条可直接勾选。
+- **主面板日历**：左侧栏「日历」入口，启动后自动打开；今天唯一红点；节点黄/绿点；右侧本月产出可勾选。
 - **大日历**：月 / 周 / 日三视图；周一起始；每格任务 chip + `+N`；节点标签。
 - **多项目**：`half` / `reading` / `ftc` / `x` / `local` / `other` 六个固定项目，月/周/日/右侧栏按项目色分组。
 - **日视图满宽**：每个项目一组，组内是自适应卡片网格，不是一条窄长列。
 - **本月产出**：按项目列 `done/total`、进度条、目标；可新增目标。
 - **任务操作**：完成/撤销、打开聊天、编辑、删除；完成即变灰+删除线。
 - **单一事实源**：数据是普通 JSON；Agent、Git、任何 AI 工具都能读。
-- **30 秒轮询**：UI 不缓存任务，写完用返回的 plan 立即重绘。
+- **手动刷新，不自动串改**：UI 不缓存任务，写完用返回的 plan 立即重绘；外部（另一个聊天框 / agent）改了文件后，点日历头部的 `↻` 重新读取。启动时自动切到日历主面板；不再依赖浮动层。
 
 ## 安装
 
@@ -97,7 +97,7 @@ ln -sf "/path/to/project/calendar/plan.json" ~/Desktop/calendar/plan.json
 
 ## HTTP 接口
 
-只接受同源 POST；浏览器内请求会自动带 DSH 的 auth cookie。
+只接受同源 POST；浏览器内请求会自动带 DSH 的 auth cookie。写操作成功后，Host 会自动追加一行到同目录 `history/changes.jsonl`（动作、任务/目标、rev、完成前后状态），`history` 接口返回最近 30 条。
 
 | 路径 | body | 说明 |
 |---|---|---|
@@ -112,7 +112,7 @@ ln -sf "/path/to/project/calendar/plan.json" ~/Desktop/calendar/plan.json
 
 ## 设计取舍
 
-- 用 `shell.overlay`，不用 `conversation.composer.dock`：后者是 session 作用域，空会话首屏不存在。
+- 注册 `main` 面板 + `sidebar.panellist`，启动时 `layout.selectPanel('calendar-board')`：浮动层在部分 DSH 窗口里会被裁切/盖住，主面板是稳定的。
 - 不替换 `conversation.hero.workspace`：它被 workspace chooser 占用。
 - 不用 iframe：React 组件直接注册进槽位。
 - 不用 `localStorage` 存任务：数据必须能被 Agent 和 Git 看见。
