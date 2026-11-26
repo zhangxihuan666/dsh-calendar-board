@@ -2,7 +2,13 @@
 
 DeepSeek Harness 主界面上的项目日历：右下角一张迷你月历，点开是月 / 周 / 日三视图；任务按项目分组，点一下就能跳进对应聊天。
 
+缩图（常驻右下角）：
+
 ![迷你日历](assets/mini-calendar.png)
+
+点开后的月视图（左侧大日历，右侧「本月产出」按项目分组，下方是选中日的任务）：
+
+![月视图](assets/month-view.png)
 
 ## 它解决什么
 
@@ -121,10 +127,11 @@ ln -sf "/path/to/project/calendar/plan.json" ~/Desktop/calendar/plan.json
 - Host 路由：`load` / `upsert` / `toggle` / `remove` / `goal-upsert` 单测通过；非法输入 400。
 - 数据层：33 tasks / 9 goals / 5 markers 读回一致。
 - `node --check index.js` / `client.js` 通过。
+- 大日历月视图：日历格、右侧「本月产出」分组、选中日任务列表、项目色标签（上方为示例数据截图，由真实组件样式渲染）。
 
 未验证：
 
-- 大日历的完整视觉截图；本机没有可用的浏览器自动化，不拿 mock 图冒充。
+- 窄屏（<900px）下右侧栏与日历的堆叠顺序。
 - 真实点击「打开聊天」后的落点。
 - 窄屏下日视图的换行效果。
 

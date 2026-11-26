@@ -189,3 +189,13 @@ node -e "JSON.parse(require('fs').readFileSync(process.env.HOME+'/Desktop/calend
 ```
 
 再确认：今天只有一个红点；有 `markers` 的日期有黄/绿点；点任务能打开详情；「打开聊天」能落到输入框。
+
+## 界面预览（给人看，Agent 可跳过）
+
+缩图常驻右下角，只有今天一个红点：
+
+![迷你日历](assets/mini-calendar.png)
+
+点开是月视图，右侧按项目列本月产出：
+
+![月视图](assets/month-view.png)

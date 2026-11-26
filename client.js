@@ -31,11 +31,11 @@ window.__ModuleLoader__.load({
       其他: '#8a8f98',
     }
     const PROJECTS = [
-      { id: 'half', label: '半封信', color: '#4f7cff' },
-      { id: 'reading', label: '阅读', color: '#2f9e6b' },
-      { id: 'ftc', label: 'First Time China', color: '#d97706' },
-      { id: 'x', label: 'X / 出海', color: '#8b5cf6' },
-      { id: 'local', label: '此地有做', color: '#0891b2' },
+      { id: 'half', label: '工作', color: '#4f7cff' },
+      { id: 'reading', label: '学习', color: '#2f9e6b' },
+      { id: 'ftc', label: '生活', color: '#d97706' },
+      { id: 'x', label: '副业', color: '#8b5cf6' },
+      { id: 'local', label: '兴趣', color: '#0891b2' },
       { id: 'other', label: '其他', color: '#8a8f98' },
     ]
     const PROJECT_MAP = Object.fromEntries(PROJECTS.map((item) => [item.id, item]))
