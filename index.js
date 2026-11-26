@@ -22,7 +22,32 @@ const STATUS = {
 }
 
 const LINES = new Set(['A', 'B', 'C', 'D', '运营', '其他'])
-const PROJECTS = new Set(['half', 'reading', 'ftc', 'x', 'local', 'other'])
+const PROJECT_ID_RE = /^[\p{L}\p{N}_-]{1,32}$/u
+const PROJECT_COLOR_RE = /^#[0-9a-fA-F]{6}$/
+const MAX_PROJECTS = 12
+
+function normalizeProjectId(value) {
+  return typeof value === 'string' && PROJECT_ID_RE.test(value.trim()) ? value.trim() : 'other'
+}
+
+function normalizeProjects(raw) {
+  if (!Array.isArray(raw)) return []
+  const seen = new Set()
+  const list = []
+  for (const item of raw) {
+    if (list.length >= MAX_PROJECTS) break
+    if (item === null || typeof item !== 'object' || Array.isArray(item)) continue
+    const id = typeof item.id === 'string' ? item.id.trim() : ''
+    if (!PROJECT_ID_RE.test(id) || id === 'other' || seen.has(id)) continue
+    seen.add(id)
+    list.push({
+      id,
+      label: text(item.label, 24) || id,
+      color: PROJECT_COLOR_RE.test(item.color ?? '') ? item.color : '#8a8f98',
+    })
+  }
+  return list
+}
 const MARKER_TYPES = new Set(['festival', 'milestone'])
 const DATE_RE = /^\d{4}-\d{2}-\d{2}$/
 const TIME_RE = /^([01]\d|2[0-3]):[0-5]\d$/
@@ -59,7 +84,7 @@ function normalizeTask(raw, index) {
   const time = typeof raw.time === 'string' && TIME_RE.test(raw.time) ? raw.time : null
   const status = raw.status === 'done' ? 'done' : 'todo'
   const line = LINES.has(raw.line) ? raw.line : '其他'
-  const project = PROJECTS.has(raw.project) ? raw.project : 'other'
+  const project = normalizeProjectId(raw.project)
   const createdAt = isoOr(raw.createdAt, new Date().toISOString())
   const completedAt = status === 'done' ? isoOr(raw.completedAt, new Date().toISOString()) : null
   return {
@@ -94,7 +119,7 @@ function normalizeGoal(raw, index) {
     title,
     date: typeof raw.date === 'string' && DATE_RE.test(raw.date) ? raw.date : null,
     metric: text(raw.metric, 200),
-    project: PROJECTS.has(raw.project) ? raw.project : 'other',
+    project: normalizeProjectId(raw.project),
     status,
     note: text(raw.note, 2000),
     createdAt: isoOr(raw.createdAt, new Date().toISOString()),
@@ -121,7 +146,7 @@ function normalizeMarker(raw, index) {
 }
 
 function emptyPlan() {
-  return { version: 1, rev: 0, updatedAt: null, goals: [], tasks: [], markers: [] }
+  return { version: 1, rev: 0, updatedAt: null, projects: [], goals: [], tasks: [], markers: [] }
 }
 
 function normalizePlan(raw) {
@@ -142,6 +167,7 @@ function normalizePlan(raw) {
     version: 1,
     rev: Number.isInteger(raw.rev) && raw.rev >= 0 ? raw.rev : 0,
     updatedAt: typeof raw.updatedAt === 'string' ? raw.updatedAt : null,
+    projects: normalizeProjects(raw.projects),
     goals,
     tasks,
     markers,

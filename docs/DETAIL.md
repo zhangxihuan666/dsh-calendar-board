@@ -120,7 +120,7 @@ dsh-calendar-board/
 ln -sf "/path/to/project/calendar/plan.json" ~/Desktop/calendar/plan.json
 ```
 
-字段见根目录 `SKILL.md`。
+字段见根目录 `SKILL.md`；`plan.json` 顶层可选 `projects`（最多 12 个）覆盖默认项目表，不写则用默认的中性项目。
 
 ## 安全与边界
 

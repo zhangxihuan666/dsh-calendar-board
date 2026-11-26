@@ -39,13 +39,17 @@ ln -sf "/path/to/project/calendar/plan.json" ~/Desktop/calendar/plan.json
   "version": 1,
   "rev": 10,
   "updatedAt": "2026-11-25T13:00:00.000Z",
+  "projects": [
+    { "id": "work", "label": "工作", "color": "#4f7cff" },
+    { "id": "study", "label": "学习", "color": "#2f9e6b" }
+  ],
   "goals": [
     {
       "id": "g-launch",
-      "title": "12 月 1 日首批 20 单可下单",
+      "title": "本周五前交季度复盘",
       "date": "2026-11-30",
-      "metric": "20 单",
-      "project": "half",
+      "metric": "一版",
+      "project": "work",
       "status": "todo",
       "note": "",
       "createdAt": "2026-11-25T12:00:00.000Z",
@@ -55,17 +59,17 @@ ln -sf "/path/to/project/calendar/plan.json" ~/Desktop/calendar/plan.json
   "tasks": [
     {
       "id": "t-20261125-2000",
-      "title": "发首篇笔记",
+      "title": "写完复盘初稿",
       "date": "2026-11-25",
       "time": "20:00",
       "status": "todo",
       "line": "A",
-      "project": "half",
+      "project": "work",
       "priority": "P0",
-      "outcome": "发布并记录 2 小时数据",
+      "outcome": "初稿进评审",
       "note": "",
       "prompt": "",
-      "source": "outputs/46-排期.md",
+      "source": "notes/weekly.md",
       "sessionId": null,
       "createdAt": "2026-11-25T12:00:00.000Z",
       "updatedAt": "2026-11-25T12:00:00.000Z",
@@ -76,7 +80,7 @@ ln -sf "/path/to/project/calendar/plan.json" ~/Desktop/calendar/plan.json
     {
       "id": "m-launch",
       "date": "2026-12-01",
-      "label": "上线",
+      "label": "月末复盘",
       "type": "milestone",
       "note": ""
     }
@@ -88,11 +92,26 @@ ln -sf "/path/to/project/calendar/plan.json" ~/Desktop/calendar/plan.json
 
 | 字段 | 可选值 |
 |---|---|
-| `project` | `half` / `reading` / `ftc` / `x` / `local` / `other` |
+| `project` | `plan.json` 里 `projects[].id`；缺省为 `half`(工作) / `reading`(学习) / `ftc`(生活) / `x`(副业) / `local`(兴趣) / `other` |
 | `line` | `A` / `B` / `C` / `D` / `运营` / `其他` |
 | `priority` | `P0` / `P1` / `null` |
 | `status` | `todo` / `done` |
 | `markers[].type` | `festival`（黄点）/ `milestone`（绿点） |
+
+自定义项目名：
+
+`plan.json` 顶层可选 `projects`（最多 12 个，按顺序显示），不给就用默认的六个中性项目：
+
+```json
+"projects": [
+  { "id": "work", "label": "工作", "color": "#4f7cff" },
+  { "id": "life", "label": "家庭", "color": "#2f9e6b" }
+]
+```
+
+- `id` 一旦被任务引用就不要改（改名请只改 `label`）；`color` 用 `#RRGGBB`。
+- 写了 `projects` 就**完全替换**默认表，`other` 始终自动追加。
+- 想保留默认项目又要加一个，就把六个默认项一起抄进 `projects` 再加新的。
 
 约束：
 

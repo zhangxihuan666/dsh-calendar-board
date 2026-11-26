@@ -30,7 +30,7 @@ window.__ModuleLoader__.load({
       运营: '#0891b2',
       其他: '#8a8f98',
     }
-    const PROJECTS = [
+    const DEFAULT_PROJECTS = [
       { id: 'half', label: '工作', color: '#4f7cff' },
       { id: 'reading', label: '学习', color: '#2f9e6b' },
       { id: 'ftc', label: '生活', color: '#d97706' },
@@ -38,7 +38,31 @@ window.__ModuleLoader__.load({
       { id: 'local', label: '兴趣', color: '#0891b2' },
       { id: 'other', label: '其他', color: '#8a8f98' },
     ]
-    const PROJECT_MAP = Object.fromEntries(PROJECTS.map((item) => [item.id, item]))
+    const PROJECT_ID_RE = /^[\p{L}\p{N}_-]{1,32}$/u
+    const PROJECT_COLOR_RE = /^#[0-9a-fA-F]{6}$/
+    let PROJECTS = DEFAULT_PROJECTS
+    let PROJECT_MAP = Object.fromEntries(PROJECTS.map((item) => [item.id, item]))
+
+    // plan.json 里写了 projects 就用它覆盖默认表；没写就退回默认。
+    function applyProjects(list) {
+      const custom = Array.isArray(list)
+        ? list
+            .filter((item) => item && typeof item === 'object' && typeof item.id === 'string' && PROJECT_ID_RE.test(item.id.trim()))
+            .slice(0, 12)
+            .map((item) => ({
+              id: item.id.trim(),
+              label: typeof item.label === 'string' && item.label.trim() !== '' ? item.label.trim() : item.id.trim(),
+              color: PROJECT_COLOR_RE.test(item.color ?? '') ? item.color : '#8a8f98',
+            }))
+        : []
+      const next = custom.length === 0
+        ? DEFAULT_PROJECTS
+        : [...custom, { id: 'other', label: '其他', color: '#8a8f98' }].filter((item, index, all) => all.findIndex((other) => other.id === item.id) === index)
+      if (next === PROJECTS) return
+      if (next.map((item) => `${item.id}:${item.label}:${item.color}`).join('|') === PROJECTS.map((item) => `${item.id}:${item.label}:${item.color}`).join('|')) return
+      PROJECTS = next
+      PROJECT_MAP = Object.fromEntries(PROJECTS.map((item) => [item.id, item]))
+    }
     const MARKER_COLOR = '#e0a100'
 
     function projectOf(task) {
@@ -279,6 +303,7 @@ window.__ModuleLoader__.load({
       const load = useCallback(async () => {
         try {
           const result = await api('load')
+          applyProjects(result.plan?.projects)
           setPlan(result.plan)
           setCapabilities(result.capabilities ?? null)
           setError('')
@@ -306,6 +331,7 @@ window.__ModuleLoader__.load({
 
       const mutate = useCallback(async (method, body) => {
         const result = await api(method, body)
+        applyProjects(result.plan?.projects)
         setPlan(result.plan)
         setError('')
         return result.plan
