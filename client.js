@@ -1963,7 +1963,7 @@ window.__ModuleLoader__.load({
               window.clearInterval(timer)
               return
             }
-            const button = Array.from(document.querySelectorAll('button'))
+            const button = Array.from(document.querySelectorAll('button, a, [role="button"]'))
               .find((item) => item.textContent.trim() === '日历' && item.closest('.calb-page') === null)
             if (button) {
               button.click()
